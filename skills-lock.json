@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "visual-style-ppt": {
+      "source": "irenerachel/visual-style-ppt-skill",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "883e26693efda08b9750252752ef3574c9e8f7eece174186d38d483ff867deb8"
+    },
+    "volcengine-image-gen": {
+      "source": "xdrshjr/jr-openclaw-skills",
+      "sourceType": "github",
+      "skillPath": "volcengine-image-gen/SKILL.md",
+      "computedHash": "a661b89b884c09ea04da91c15b37129be3ad27edf0ce569a9acf49213d6184d6"
+    }
+  }
+}

@@ -1,0 +1,317 @@
+<!DOCTYPE html><html lang="zh-CN"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>外派培训课件管理系统</title>
+<style>
+:root{--navy:#1a2639;--blue:#2b5797;--orange:#e07b39;--white:#fff;--gray:#f0f2f5;--text:#333;--sub:#888;--card:#fff;--red:#e74c3c;--green:#27ae60}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:"Segoe UI","Microsoft YaHei",Arial,sans-serif;background:#f5f6f8;color:var(--text);min-height:100vh}
+.header{background:var(--navy);color:var(--white);padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.header h1{font-size:18px;font-weight:600}
+.header .ver{font-size:11px;color:#a0b4c8}
+.nav{background:var(--white);display:flex;border-bottom:1px solid #e0e0e0;padding:0 24px}
+.nav a{display:flex;align-items:center;gap:6px;padding:14px 20px;font-size:14px;color:var(--sub);text-decoration:none;border-bottom:2px solid transparent;transition:all .2s;cursor:pointer}
+.nav a:hover,.nav a.active{color:var(--blue);border-bottom-color:var(--orange)}
+.main{padding:24px;max-width:1200px;margin:0 auto}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px}
+.card{background:var(--card);border-radius:8px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.card .label{font-size:12px;color:var(--sub);margin-bottom:6px}
+.card .value{font-size:28px;font-weight:700;color:var(--navy)}
+.card .value.small{font-size:20px}
+.section{background:var(--card);border-radius:8px;padding:24px;margin-bottom:20px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.section h2{font-size:16px;color:var(--navy);margin-bottom:16px;padding-bottom:10px;border-bottom:2px solid var(--gray)}
+.row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.input-group{flex:1;min-width:200px}
+.input-group label{display:block;font-size:12px;color:var(--sub);margin-bottom:6px;font-weight:500}
+.input-group input,.input-group select{width:100%;padding:10px 14px;border:1px solid #d0d0d0;border-radius:6px;font-size:14px;transition:border .2s}
+.input-group input:focus{border-color:var(--blue);outline:none;box-shadow:0 0 0 3px rgba(43,87,151,.1)}
+.steps{display:flex;gap:12px;align-items:center}
+.step{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--sub);cursor:pointer}
+.step input{accent-color:var(--blue)}
+.step.checked{color:var(--text)}
+.btn{padding:10px 24px;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:var(--orange);color:var(--white)}
+.btn-primary:hover{background:#c96a2e}
+.btn-outline{background:var(--white);color:var(--blue);border:1px solid var(--blue)}
+.btn-outline:hover{background:#f0f4fa}
+.btn-danger{background:var(--white);color:var(--red);border:1px solid var(--red)}
+.btn-danger:hover{background:#fdf0f0}
+.btn-sm{padding:6px 14px;font-size:12px}
+.progress{margin-top:16px}
+.progress-bar{height:6px;background:var(--gray);border-radius:3px;overflow:hidden;margin-bottom:8px}
+.progress-bar .fill{height:100%;background:linear-gradient(90deg,var(--blue),var(--orange));transition:width .5s;border-radius:3px}
+.progress-text{font-size:12px;color:var(--sub)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:10px 12px;background:var(--gray);color:var(--navy);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+td{padding:10px 12px;border-bottom:1px solid #f0f0f0}
+tr:hover td{background:#fafbfc}
+.badge{display:inline-block;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:600}
+.badge-ok{background:#e8f5e9;color:var(--green)}
+.badge-warn{background:#fff3e0;color:var(--orange)}
+.badge-err{background:#ffebee;color:var(--red)}
+.preview-box{max-height:400px;overflow-y:auto;background:#fafafa;border:1px solid #e0e0e0;border-radius:6px;padding:16px;font-size:13px;line-height:1.7;white-space:pre-wrap;font-family:monospace}
+.empty{text-align:center;padding:40px;color:var(--sub);font-size:14px}
+.log-box{max-height:300px;overflow-y:auto;background:#1a1a2e;color:#a0ffa0;border-radius:6px;padding:14px;font-size:12px;font-family:monospace;white-space:pre-wrap;line-height:1.6}
+.hidden{display:none}
+.fade{opacity:.5}
+.toast{position:fixed;top:20px;right:20px;background:var(--navy);color:var(--white);padding:12px 20px;border-radius:8px;font-size:13px;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,.2);animation:slideIn .3s}
+@keyframes slideIn{from{transform:translateX(100px);opacity:0}to{transform:translateX(0);opacity:1}}
+</style></head><body>
+
+<div class="header">
+  <div><h1>🌏 外派培训课件管理系统</h1></div>
+  <div class="ver">Training Abroad PPT Manager v1.0</div>
+</div>
+
+<div class="nav">
+  <a class="active" data-tab="generate" onclick="switchTab('generate')">📝 生成课件</a>
+  <a data-tab="review" onclick="switchTab('review')">🔍 审查队列</a>
+  <a data-tab="completed" onclick="switchTab('completed')">📂 已完成</a>
+</div>
+
+<div class="main">
+
+<!-- Tab: Generate -->
+<div id="tab-generate">
+<div class="cards" id="stats-cards">
+  <div class="card"><div class="label">已完成国家</div><div class="value" id="stat-countries">-</div></div>
+  <div class="card"><div class="label">生成文件数</div><div class="value" id="stat-files">-</div></div>
+  <div class="card"><div class="label">总大小</div><div class="value small" id="stat-size">-</div></div>
+  <div class="card"><div class="label">队列中</div><div class="value small" id="stat-queue">-</div></div>
+</div>
+
+<div class="section">
+  <h2>🚀 启动生成流水线</h2>
+  <div class="row">
+    <div class="input-group"><label>国家名称（如：德国、巴西、越南）</label><input type="text" id="country-input" placeholder="输入国家名..." onkeydown="if(event.key==='Enter')startGenerate()"></div>
+    <button class="btn btn-primary" onclick="startGenerate()" id="btn-generate">▶ 一键生成</button>
+    <button class="btn btn-outline" onclick="toggleBatch()">📋 批量导入</button>
+  </div>
+  <div id="batch-area" class="hidden" style="margin-top:14px">
+    <div class="input-group"><label>批量国家名称（每行一个，如：德国\n巴西\n越南）</label><textarea id="batch-input" rows="4" style="width:100%;padding:10px;border:1px solid #d0d0d0;border-radius:6px;font-size:14px;resize:vertical" placeholder="德国&#10;巴西&#10;越南&#10;泰国"></textarea></div>
+    <button class="btn btn-primary btn-sm" onclick="startBatch()" style="margin-top:8px">▶ 批量生成</button>
+  </div>
+  <div style="margin-top:14px" class="steps">
+    <label class="step checked"><input type="checkbox" id="step1" checked> ① 检索信息</label>
+    <span style="color:#ccc">→</span>
+    <label class="step checked"><input type="checkbox" id="step2" checked> ② 生成PPT内容</label>
+    <span style="color:#ccc">→</span>
+    <label class="step checked"><input type="checkbox" id="step3" checked> ③ 生成PPT课件</label>
+  </div>
+  <div class="progress hidden" id="progress-area">
+    <div class="progress-bar"><div class="fill" id="progress-fill" style="width:0%"></div></div>
+    <div class="progress-text" id="progress-msg">准备中...</div>
+  </div>
+</div>
+</div>
+
+<!-- Tab: Review -->
+<div id="tab-review" class="hidden">
+<div class="section"><h2>🔍 待审查的课件</h2><div id="review-list"><div class="empty">暂无待审查的课件</div></div></div>
+</div>
+
+<!-- Tab: Completed -->
+<div id="tab-completed" class="hidden">
+<div class="section"><h2>📂 已完成生成的课件</h2><div id="completed-list"><div class="empty">加载中...</div></div></div>
+</div>
+
+</div>
+
+<div id="log-panel" class="section hidden" style="margin:24px;max-width:1200px;margin-left:auto;margin-right:auto">
+  <h2>📋 生成日志</h2>
+  <div class="log-box" id="log-content"></div>
+</div>
+
+<div id="toast-container"></div>
+
+<script>
+const API = '';
+let currentTab = 'generate';
+
+async function api(url, opts = {}) {
+  const res = await fetch(API + url, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  return res.json();
+}
+
+function toast(msg) {
+  const el = document.createElement('div'); el.className = 'toast'; el.textContent = msg;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('active', a.dataset.tab === tab));
+  document.querySelectorAll('[id^="tab-"]').forEach(d => d.classList.add('hidden'));
+  document.getElementById('tab-' + tab).classList.remove('hidden');
+  document.getElementById('log-panel').classList.toggle('hidden', tab !== 'generate');
+  if (tab === 'completed') loadCompleted();
+  if (tab === 'review') loadReview();
+  if (tab === 'generate') loadStats();
+}
+
+async function loadStats() {
+  const s = await api('/api/stats');
+  document.getElementById('stat-countries').textContent = s.completedCountries || 0;
+  document.getElementById('stat-files').textContent = s.completedFiles || 0;
+  document.getElementById('stat-size').textContent = (s.totalSize / 1024 / 1024).toFixed(1) + ' MB';
+  document.getElementById('stat-queue').textContent = s.inQueue || 0;
+}
+
+async function startGenerate() {
+  const country = document.getElementById('country-input').value.trim();
+  if (!country) return toast('请输入国家名称');
+  const steps = [
+    document.getElementById('step1').checked,
+    document.getElementById('step2').checked,
+    document.getElementById('step3').checked,
+  ].filter(Boolean);
+
+  document.getElementById('btn-generate').disabled = true;
+  document.getElementById('progress-area').classList.remove('hidden');
+  document.getElementById('progress-fill').style.width = '10%';
+  document.getElementById('progress-msg').textContent = `正在为「${country}」启动生成流水线...`;
+  document.getElementById('log-panel').classList.remove('hidden');
+  document.getElementById('log-content').textContent = `提交任务: ${country} | ${new Date().toLocaleString()}\n步骤: ${['检索信息','PPT内容','PPT课件'].filter((_,i)=>steps.includes(i+1)||(i===0&&steps.length===3)).join('→')}\n`;
+
+  try {
+    const res = await api('/api/generate', { method: 'POST', body: JSON.stringify({ country, steps }) });
+    document.getElementById('progress-fill').style.width = '100%';
+    document.getElementById('progress-msg').textContent = `「${country}」处理完成！文件已生成。请在审查队列中查看。`;
+    document.getElementById('log-content').textContent += `\n✅ 完成: ${res.message}\n文件: ${(res.files||[]).join(', ') || '需要手动检查'}`;
+    toast('✅ ' + country + ' 处理完成！');
+  } catch (e) {
+    document.getElementById('progress-msg').textContent = '出现错误: ' + e.message;
+    document.getElementById('log-content').textContent += '\n❌ ' + e.message;
+  }
+  document.getElementById('btn-generate').disabled = false;
+  loadStats();
+}
+
+async function loadReview() {
+  const queue = await api('/api/queue');
+  const el = document.getElementById('review-list');
+  if (!queue.length) return el.innerHTML = '<div class="empty">暂无待审查的课件 ✨</div>';
+  el.innerHTML = queue.map(q => `
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><b style="font-size:15px">${q.country}</b>
+          <span class="badge ${q.status==='completed'?'badge-ok':q.status==='running'?'badge-warn':'badge-err'}">${q.status}</span>
+          <span style="font-size:12px;color:var(--sub);margin-left:8px">${new Date(q.started).toLocaleString()}</span>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-outline btn-sm" onclick="previewCountry('${q.country}')">👁 预览</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteCountry('${q.country}')">🗑 删除</button>
+        </div>
+      </div>
+      <div id="preview-${q.country}" class="preview-box hidden" style="margin-top:12px"></div>
+    </div>
+  `).join('');
+}
+
+async function previewCountry(country) {
+  const box = document.getElementById('preview-' + country);
+  box.classList.toggle('hidden');
+  if (!box.classList.contains('hidden') && !box.textContent) {
+    box.textContent = '加载中...';
+    const data = await api('/api/preview/' + country);
+    box.textContent = data.preview || '（无预览内容）';
+  }
+}
+
+async function loadCompleted() {
+  const list = await api('/api/completed');
+  const el = document.getElementById('completed-list');
+  if (!list.length) return el.innerHTML = '<div class="empty">暂无已完成的课件 📭</div>';
+  el.innerHTML = `<table>
+    <tr><th>国家/项目</th><th>类型</th><th>文件数</th><th>大小</th><th>修改时间</th><th>操作</th></tr>
+    ${list.map(l => `<tr>
+      <td><b>${l.name.replace('出国培训课件','').replace('出国培训课程文档','')}</b></td>
+      <td>${l.type}</td><td>${l.files.length}</td>
+      <td>${(l.size/1024/1024).toFixed(1)} MB</td>
+      <td>${new Date(l.mtime).toLocaleDateString()}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteCountry('${l.name.replace('出国培训课件','').replace('出国培训课程文档','')}')">🗑</button></td>
+    </tr>`).join('')}
+  </table>`;
+}
+
+function toggleBatch() { document.getElementById('batch-area').classList.toggle('hidden'); }
+
+async function startBatch() {
+  const raw = document.getElementById('batch-input').value.trim();
+  if (!raw) return toast('请输入国家名称');
+  const countries = raw.split('\n').map(s => s.trim()).filter(Boolean);
+  const steps = [document.getElementById('step1').checked, document.getElementById('step2').checked, document.getElementById('step3').checked];
+  document.getElementById('progress-area').classList.remove('hidden');
+  document.getElementById('progress-fill').style.width = '5%';
+  document.getElementById('progress-msg').textContent = `批量生成 ${countries.length} 个国家: ${countries.join(', ')}`;
+  document.getElementById('log-content').textContent = `批量任务: ${countries.join(', ')}\n`;
+  document.getElementById('btn-generate').disabled = true;
+  for (let i = 0; i < countries.length; i++) {
+    document.getElementById('progress-fill').style.width = (5 + 90 * (i / countries.length)) + '%';
+    document.getElementById('progress-msg').textContent = `[${i+1}/${countries.length}] ${countries[i]}...`;
+    const res = await api('/api/generate', { method: 'POST', body: JSON.stringify({ country: countries[i], steps }) });
+    document.getElementById('log-content').textContent += `\n${countries[i]}: ${res.status} - ${res.message}`;
+  }
+  document.getElementById('progress-fill').style.width = '100%';
+  document.getElementById('progress-msg').textContent = `批量完成！${countries.length} 个国家处理完毕`;
+  document.getElementById('btn-generate').disabled = false;
+  loadStats(); loadReview();
+}
+
+async function loadReview() {
+  const queue = await api('/api/queue');
+  const el = document.getElementById('review-list');
+  const pending = queue.filter(q => q.status !== 'completed');
+  if (!pending.length) return el.innerHTML = '<div class="empty">暂无待审查的课件 ✨</div>';
+  el.innerHTML = pending.map(q => `
+    <div class="card" style="margin-bottom:12px">
+      <div><b style="font-size:15px">${q.country}</b> <span class="badge ${q.status==='completed'?'badge-ok':'badge-warn'}">${q.status}</span></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-outline btn-sm" onclick="previewCountry('${q.country}')">👁 预览文档</button>
+        <button class="btn btn-outline btn-sm" onclick="loadThumbnails('${q.country}')">🖼 PPT缩略图</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteCountry('${q.country}')">🗑</button>
+      </div>
+      <div id="preview-${q.country}" class="preview-box hidden" style="margin-top:12px;max-height:300px"></div>
+      <div id="thumbs-${q.country}" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"></div>
+    </div>
+  `).join('');
+}
+
+async function loadThumbnails(country) {
+  const box = document.getElementById('thumbs-' + country);
+  box.innerHTML = '加载中...';
+  try {
+    const data = await api('/api/thumbnails?country=' + encodeURIComponent(country));
+    if (!data.files.length) return box.innerHTML = '<span style="color:var(--sub);font-size:12px">暂无PPT课件，请先生成</span>';
+    box.innerHTML = data.files.map(f => `
+      <div style="background:var(--gray);border-radius:6px;padding:12px;text-align:center;min-width:100px">
+        <div style="font-size:28px">📊</div>
+        <div style="font-size:10px;color:var(--text);margin-top:6px;word-break:break-all">${f.name.replace('.pptx','').replace(/_/g,' ')}</div>
+        <div style="font-size:9px;color:var(--sub);margin-top:4px">${(f.size/1024).toFixed(0)} KB</div>
+      </div>
+    `).join('');
+  } catch(e) { box.innerHTML = '加载失败'; }
+}
+
+async function previewCountry(country) {
+  const box = document.getElementById('preview-' + country);
+  box.classList.toggle('hidden');
+  if (!box.classList.contains('hidden') && !box.textContent) {
+    box.textContent = '加载中...';
+    const data = await api('/api/preview/' + country);
+    box.textContent = data.preview || '（无预览内容）';
+  }
+}
+
+async function deleteCountry(country) {
+  if (!confirm(`确认删除「${country}」的所有课件？此操作不可恢复。`)) return;
+  await api('/api/delete/' + country, { method: 'DELETE' });
+  toast('已删除: ' + country);
+  loadReview();
+  loadCompleted();
+  loadStats();
+}
+
+// Init
+loadStats();
+</script></body></html>

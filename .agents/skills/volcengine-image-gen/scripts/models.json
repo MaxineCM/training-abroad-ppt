@@ -1,0 +1,28 @@
+{
+  "models": {
+    "doubao-seedream-3-0-t2i-250115": {
+      "name": "Seedream 3.0",
+      "description": "轻量级文生图模型",
+      "supported_sizes": ["1024x1024", "2048x2048"]
+    },
+    "doubao-seedream-4-0-t2i-250115": {
+      "name": "Seedream 4.0", 
+      "description": "标准文生图模型",
+      "supported_sizes": ["1024x1024", "2048x2048", "4096x4096"]
+    },
+    "doubao-seedream-4-5-251128": {
+      "name": "Seedream 4.5",
+      "description": "最新高质量文生图模型",
+      "supported_sizes": ["1024x1024", "2048x2048", "4096x4096"]
+    }
+  },
+  "supported_sizes": {
+    "1:1": {"width": 1024, "height": 1024, "pixels": 1048576},
+    "2:3": {"width": 1024, "height": 1536, "pixels": 1572864},
+    "3:2": {"width": 1536, "height": 1024, "pixels": 1572864},
+    "16:9": {"width": 1920, "height": 1080, "pixels": 2073600},
+    "9:16": {"width": 1080, "height": 1920, "pixels": 2073600},
+    "4:3": {"width": 1440, "height": 1080, "pixels": 1555200},
+    "3:4": {"width": 1080, "height": 1440, "pixels": 1555200}
+  }
+}
