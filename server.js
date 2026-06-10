@@ -139,13 +139,18 @@ app.get('/api/preview/:country', (req, res) => {
   const { country } = req.params;
   const researchFile = path.join(OUTPUT, '检索信息结果', `${country}检索信息结果.docx`);
   if (fs.existsSync(researchFile)) {
-    // Return text preview via markitdown
-    exec(`python -m markitdown "${researchFile}"`, { timeout: 15000 }, (err, stdout) => {
-      if (err) return res.json({ preview: `[无法预览] ${err.message}` });
-      res.json({ preview: stdout.substring(0, 10000) });
-    });
+    // Extract text from docx (unzip + parse XML)
+    try {
+      const AdmZip = require('adm-zip');
+      const zip = new AdmZip(researchFile);
+      const xml = zip.readAsText('word/document.xml');
+      const text = xml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      res.json({ preview: text.substring(0, 8000) });
+    } catch (e) {
+      res.json({ preview: `[解析失败] ${e.message}` });
+    }
   } else {
-    res.json({ preview: '文件不存在' });
+    res.json({ preview: '检索文档不存在。请先生成。' });
   }
 });
 
