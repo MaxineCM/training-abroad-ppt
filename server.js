@@ -121,8 +121,16 @@ app.get('/api/completed', (req, res) => {
     }
   };
   scanDir(path.join(OUTPUT, 'PPT课件'), 'PPT课件');
-  scanDir(path.join(OUTPUT, '检索信息结果'), '检索信息');
   scanDir(path.join(OUTPUT, 'PPT内容文件'), 'PPT内容');
+  // 检索信息结果 contains .docx files, not directories
+  if (fs.existsSync(path.join(OUTPUT, '检索信息结果'))) {
+    for (const f of fs.readdirSync(path.join(OUTPUT, '检索信息结果'))) {
+      if (f.endsWith('.docx')) {
+        const full = path.join(OUTPUT, '检索信息结果', f);
+        completed.push({ name: f, type: '检索信息', path: full, files: [f], size: fs.statSync(full).size, mtime: fs.statSync(full).mtime });
+      }
+    }
+  }
   res.json(completed);
 });
 
