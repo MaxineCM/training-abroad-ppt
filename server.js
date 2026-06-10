@@ -17,91 +17,88 @@ const LOG_DIR = path.join(__dirname, 'workspace', 'logs');
 [OUTPUT, path.join(__dirname, 'workspace'), LOG_DIR].forEach(d => { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); });
 if (!fs.existsSync(QUEUE_FILE)) fs.writeFileSync(QUEUE_FILE, '[]');
 
-// ========== Pipeline Executor ==========
+// ========== Pipeline Executor (Task Queue Mode) ==========
+// Web submits tasks → writes to workspace/tasks/ → Claude session picks up and executes
 const THUMB_DIR = path.join(__dirname, 'workspace', 'thumbnails');
+const TASK_DIR = path.join(__dirname, 'workspace', 'tasks');
 if (!fs.existsSync(THUMB_DIR)) fs.mkdirSync(THUMB_DIR, { recursive: true });
+if (!fs.existsSync(TASK_DIR)) fs.mkdirSync(TASK_DIR, { recursive: true });
 
-async function runClaudeCommand(prompt) {
-  return new Promise((resolve) => {
-    exec(`claude -p "${prompt.replace(/"/g, '\\"')}" --no-confirm 2>&1`, { timeout: 300000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
-      resolve({ ok: !err, output: (stdout || '').substring(0, 5000), error: err ? err.message : null });
-    });
-  });
-}
+const STEP_DEFS = [
+  { name: '检索信息', outDir: '检索信息结果', file: (c) => `${c}检索信息结果.docx` },
+  { name: 'PPT内容', outDir: 'PPT内容文件', file: (c) => `${c}出国培训课程文档` },
+  { name: 'PPT课件', outDir: 'PPT课件', file: (c) => `${c}出国培训课件` },
+];
 
-async function runPipeline(country, stepFlags) {
-  const id = Date.now().toString(36);
-  const log = (msg) => { const l = `[${new Date().toLocaleTimeString()}] ${msg}\n`; fs.appendFileSync(path.join(LOG_DIR, `${id}.log`), l); return l; };
-  const queue = JSON.parse(fs.readFileSync(QUEUE_FILE, 'utf-8'));
-  const item = { id, country, steps: stepFlags, status: 'running', step: 0, started: new Date().toISOString(), files: [], logs: [] };
-  queue.push(item);
-  fs.writeFileSync(QUEUE_FILE, JSON.stringify(queue, null, 2));
-
-  const stepDefs = [
-    { name: '检索信息', cmd: `/training-abroad-research ${country}`, outDir: '检索信息结果', file: `${country}检索信息结果.docx` },
-    { name: 'PPT内容', cmd: `/ppt-content-generator 生成${country}课程内容`, outDir: 'PPT内容文件', file: `${country}出国培训课程文档` },
-    { name: 'PPT课件', cmd: `/ppt-generator 生成${country}PPT课件`, outDir: 'PPT课件', file: `${country}出国培训课件` },
-  ];
-
-  try {
-    for (let i = 0; i < 3; i++) {
-      if (!stepFlags[i]) continue;
-      const def = stepDefs[i];
-      item.step = i + 1;
-      fs.writeFileSync(QUEUE_FILE, JSON.stringify(queue, null, 2));
-
-      const outPath = path.join(OUTPUT, def.outDir, def.file);
-      if (fs.existsSync(outPath)) {
-        const msg = `[Step ${i+1}/3] ${def.name} - 已存在，跳过`;
-        log(msg); item.logs.push(msg);
-      } else {
-        const msg = `[Step ${i+1}/3] ${def.name} - 执行: ${def.cmd}`;
-        log(msg); item.logs.push(msg);
-
-        const result = await runClaudeCommand(def.cmd);
-        if (result.ok) {
-          const okMsg = `✅ ${def.name} 完成`;
-          log(okMsg); item.logs.push(okMsg);
-        } else {
-          const errMsg = `⚠️ ${def.name} CLI 不可用，请在 Claude Code 中手动执行: ${def.cmd}`;
-          log(errMsg); item.logs.push(errMsg);
-        }
-      }
-    }
-
-    item.status = 'completed';
-    item.completed = new Date().toISOString();
-    const pptDir = path.join(OUTPUT, 'PPT课件', `${country}出国培训课件`);
-    if (fs.existsSync(pptDir)) item.files = fs.readdirSync(pptDir).filter(f => f.endsWith('.pptx'));
-
-  } catch (e) {
-    log(`ERROR: ${e.message}`);
-    item.status = 'failed'; item.error = e.message;
+function checkFiles(country, stepFlags) {
+  const exist = [], missing = [];
+  for (let i = 0; i < 3; i++) {
+    if (!stepFlags[i]) continue;
+    const p = path.join(OUTPUT, STEP_DEFS[i].outDir, STEP_DEFS[i].file(country));
+    if (fs.existsSync(p)) exist.push(i); else missing.push(i);
   }
-  fs.writeFileSync(QUEUE_FILE, JSON.stringify(queue, null, 2));
-  return item;
+  return { exist, missing, allExist: missing.length === 0 };
 }
 
-// Generate thumbnails for a pptx file
-async function genThumbnail(pptxPath, country, chapter) {
-  const thumbName = `${country}_${chapter}.jpg`;
-  const thumbPath = path.join(THUMB_DIR, thumbName);
-  if (fs.existsSync(thumbPath)) return `/thumbnails/${thumbName}`;
-  return new Promise((resolve) => {
-    exec(`python ".claude/skills/pptx/scripts/thumbnail.py" "${pptxPath}" "${path.join(THUMB_DIR, country + '_' + chapter)}" --cols 3 2>&1`, { timeout: 30000 }, (err) => {
-      resolve(err ? null : `/thumbnails/${thumbName}`);
-    });
-  });
-}
+// SSE clients
+const sseClients = new Set();
+function broadcast(msg) { for (const c of sseClients) c.write(`data: ${JSON.stringify(msg)}\n\n`); }
 
 // ========== API Routes ==========
 
-// Submit generation task
-app.post('/api/generate', async (req, res) => {
-  const { country, steps } = req.body; // steps = [true, true, true] for full pipeline
+// SSE endpoint
+app.get('/api/events', (req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
+  sseClients.add(res); req.on('close', () => sseClients.delete(res));
+});
+
+// Submit generation task — checks files, writes task for Claude session
+app.post('/api/generate', (req, res) => {
+  const { country, steps: stepFlags } = req.body;
   if (!country) return res.status(400).json({ error: 'Country required' });
-  const item = await runPipeline(country, steps || [true, true, true]);
-  res.json({ id: item.id, message: `Task ${item.id} completed`, status: item.status });
+  const steps = stepFlags || [true, true, true];
+  const check = checkFiles(country, steps);
+
+  const pptDir = path.join(OUTPUT, 'PPT课件', `${country}出国培训课件`);
+  const existingFiles = (fs.existsSync(pptDir)) ? fs.readdirSync(pptDir).filter(f => f.endsWith('.pptx')) : [];
+
+  if (check.allExist) {
+    return res.json({ status: 'completed', country, check, files: existingFiles, message: '全部文件已就绪' });
+  }
+
+  // Write task file for Claude session to pick up
+  const task = { country, steps, missing: check.missing.map(i => STEP_DEFS[i].name), created: new Date().toISOString() };
+  const taskFile = path.join(TASK_DIR, `${country}_${Date.now().toString(36)}.json`);
+  fs.writeFileSync(taskFile, JSON.stringify(task, null, 2));
+
+  const queue = JSON.parse(fs.readFileSync(QUEUE_FILE, 'utf-8'));
+  const item = {
+    id: path.basename(taskFile, '.json'), country, steps, status: 'pending',
+    started: new Date().toISOString(), files: existingFiles, check,
+    missingNames: check.missing.map(i => STEP_DEFS[i].name)
+  };
+  queue.push(item);
+  fs.writeFileSync(QUEUE_FILE, JSON.stringify(queue, null, 2));
+  broadcast({ type: 'new_task', country, missing: item.missingNames });
+
+  res.json({ status: 'pending', country, check, taskFile: path.basename(taskFile), missingNames: item.missingNames });
+});
+
+// Get pending tasks (for Claude session to check)
+app.get('/api/pending-tasks', (req, res) => {
+  if (!fs.existsSync(TASK_DIR)) return res.json([]);
+  const tasks = fs.readdirSync(TASK_DIR).filter(f => f.endsWith('.json')).map(f => {
+    const t = JSON.parse(fs.readFileSync(path.join(TASK_DIR, f), 'utf-8'));
+    return { file: f, ...t };
+  });
+  res.json(tasks);
+});
+
+// Mark task as done
+app.delete('/api/pending-tasks/:file', (req, res) => {
+  const tf = path.join(TASK_DIR, req.params.file);
+  if (fs.existsSync(tf)) { fs.unlinkSync(tf); return res.json({ ok: true }); }
+  res.json({ ok: false });
 });
 
 // Get queue/status

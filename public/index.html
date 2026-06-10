@@ -167,31 +167,26 @@ async function loadStats() {
 async function startGenerate() {
   const country = document.getElementById('country-input').value.trim();
   if (!country) return toast('请输入国家名称');
-  const steps = [
-    document.getElementById('step1').checked,
-    document.getElementById('step2').checked,
-    document.getElementById('step3').checked,
-  ].filter(Boolean);
+  const steps = [document.getElementById('step1').checked, document.getElementById('step2').checked, document.getElementById('step3').checked];
 
   document.getElementById('btn-generate').disabled = true;
   document.getElementById('progress-area').classList.remove('hidden');
-  document.getElementById('progress-fill').style.width = '10%';
-  document.getElementById('progress-msg').textContent = `正在为「${country}」启动生成流水线...`;
   document.getElementById('log-panel').classList.remove('hidden');
-  document.getElementById('log-content').textContent = `提交任务: ${country} | ${new Date().toLocaleString()}\n步骤: ${['检索信息','PPT内容','PPT课件'].filter((_,i)=>steps.includes(i+1)||(i===0&&steps.length===3)).join('→')}\n`;
 
-  try {
-    const res = await api('/api/generate', { method: 'POST', body: JSON.stringify({ country, steps }) });
-    document.getElementById('progress-fill').style.width = '100%';
-    document.getElementById('progress-msg').textContent = `「${country}」处理完成！文件已生成。请在审查队列中查看。`;
-    document.getElementById('log-content').textContent += `\n✅ 完成: ${res.message}\n文件: ${(res.files||[]).join(', ') || '需要手动检查'}`;
-    toast('✅ ' + country + ' 处理完成！');
-  } catch (e) {
-    document.getElementById('progress-msg').textContent = '出现错误: ' + e.message;
-    document.getElementById('log-content').textContent += '\n❌ ' + e.message;
+  const res = await api('/api/generate', { method: 'POST', body: JSON.stringify({ country, steps }) });
+  document.getElementById('progress-fill').style.width = '100%';
+
+  if (res.status === 'completed') {
+    document.getElementById('progress-msg').textContent = `✅「${country}」全部文件已就绪！`;
+    document.getElementById('log-content').textContent = `✅ ${country}: 所有文件已存在，无需重新生成。\n文件: ${(res.files||[]).join(', ')}`;
+    toast('✅ ' + country + ' 已就绪');
+  } else {
+    document.getElementById('progress-msg').textContent = `📋「${country}」任务已提交。缺失: ${res.missingNames.join('、')}`;
+    document.getElementById('log-content').textContent = `📋 ${country} 任务已提交\n缺失步骤: ${res.missingNames.join('、')}\n等待Claude会话执行...`;
+    toast('📋 ' + country + ' 等待生成');
   }
   document.getElementById('btn-generate').disabled = false;
-  loadStats();
+  loadStats(); loadReview();
 }
 
 async function loadReview() {
