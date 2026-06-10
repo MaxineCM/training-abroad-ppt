@@ -92,3 +92,4 @@ claude mcp list
 # 解包 docx/pptx 分析 XML
 unzip -o file.docx -d output_dir/
 ```
+# Auto-sync test
