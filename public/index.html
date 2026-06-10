@@ -106,12 +106,19 @@ tr:hover td{background:#fafbfc}
 
 <!-- Tab: Review -->
 <div id="tab-review" class="hidden">
-<div class="section"><h2>🔍 待审查的课件</h2><div id="review-list"><div class="empty">暂无待审查的课件</div></div></div>
+<div class="section"><h2>🔍 审查与修改</h2>
+<div style="font-size:12px;color:var(--sub);margin-bottom:16px">审查生成的PPT内容和课件，可提出修改意见重新生成。修改遵循版本管理（V1→V2→V3），确认通过后删除旧版。</div>
+<div id="review-list"><div class="empty">暂无待审查的课件</div></div></div>
 </div>
 
 <!-- Tab: Completed -->
 <div id="tab-completed" class="hidden">
-<div class="section"><h2>📂 已完成生成的课件</h2><div id="completed-list"><div class="empty">加载中...</div></div></div>
+<div class="section"><h2>📂 已完成</h2>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+  <div style="font-size:12px;color:var(--sub)">审查通过后移动到此处。支持批量下载。</div>
+  <button class="btn btn-primary btn-sm" onclick="batchDownload()" id="btn-batch-dl">📥 批量下载</button>
+</div>
+<div id="completed-list"><div class="empty">加载中...</div></div></div>
 </div>
 
 </div>
@@ -188,24 +195,82 @@ async function startGenerate() {
 }
 
 async function loadReview() {
-  const queue = await api('/api/queue');
+  const [queue, completed] = await Promise.all([api('/api/queue'), api('/api/completed')]);
   const el = document.getElementById('review-list');
-  if (!queue.length) return el.innerHTML = '<div class="empty">暂无待审查的课件 ✨</div>';
-  el.innerHTML = queue.map(q => `
-    <div class="card" style="margin-bottom:12px">
+  // Show countries that have files but aren't archived
+  const items = completed.filter(c => c.type === 'PPT课件' && c.files.length > 0);
+  if (!items.length) return el.innerHTML = '<div class="empty">暂无待审查的课件 ✨<br><small>先生成课件，完成后会出现在这里</small></div>';
+
+  el.innerHTML = items.map(c => {
+    const country = c.name.replace('出国培训课件','');
+    return `
+    <div class="card" style="margin-bottom:16px">
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <div><b style="font-size:15px">${q.country}</b>
-          <span class="badge ${q.status==='completed'?'badge-ok':q.status==='running'?'badge-warn':'badge-err'}">${q.status}</span>
-          <span style="font-size:12px;color:var(--sub);margin-left:8px">${new Date(q.started).toLocaleString()}</span>
+        <div><b style="font-size:16px">${country}</b>
+          <span class="badge badge-ok">待审查</span>
+          <span style="font-size:11px;color:var(--sub);margin-left:8px">${c.files.length}个文件 · ${(c.size/1024/1024).toFixed(1)}MB · ${new Date(c.mtime).toLocaleDateString()}</span>
         </div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-outline btn-sm" onclick="previewCountry('${q.country}')">👁 预览</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteCountry('${q.country}')">🗑 删除</button>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-outline btn-sm" onclick="downloadCountry('${country}')">📥 下载</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteCountry('${country}')">🗑</button>
         </div>
       </div>
-      <div id="preview-${q.country}" class="preview-box hidden" style="margin-top:12px"></div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap" id="files-${country}">
+        ${c.files.map(f => `<span style="font-size:11px;background:var(--gray);padding:2px 8px;border-radius:3px">${f}</span>`).join('')}
+      </div>
+      <!-- Modify section -->
+      <div style="margin-top:12px;padding:10px;background:var(--gray);border-radius:6px">
+        <div style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:6px">✏️ 修改意见（可选章节）</div>
+        <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+          <select id="chapter-${country}" style="padding:6px 10px;border:1px solid #d0d0d0;border-radius:4px;font-size:12px">
+            <option value="">全部章节</option>
+            <option value="第一章">第一章</option><option value="第二章">第二章</option><option value="第三章">第三章</option>
+            <option value="第四章">第四章</option><option value="第五章">第五章</option><option value="第六章">第六章</option>
+            <option value="附录">附录</option>
+          </select>
+          <input id="feedback-${country}" placeholder="描述修改内容，如：第一章国旗页精简..." style="flex:1;min-width:200px;padding:6px 10px;border:1px solid #d0d0d0;border-radius:4px;font-size:12px">          <button class="btn btn-outline btn-sm" onclick="submitModify('${country}')">🔄 重新生成</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-outline btn-sm" onclick="loadThumbnails('${country}')">🖼 文件列表</button>
+        <button class="btn btn-outline btn-sm" onclick="previewCountry('${country}')">👁 预览文档</button>
+      </div>
+      <div id="preview-${country}" class="preview-box hidden" style="margin-top:12px;max-height:300px"></div>
+      <div id="thumbs-${country}" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"></div>
     </div>
-  `).join('');
+  `}).join('');
+}
+
+async function submitModify(country) {
+  const chapter = document.getElementById('chapter-' + country).value;
+  const feedback = document.getElementById('feedback-' + country).value.trim();
+  if (!feedback) return toast('请输入修改意见');
+  const btn = document.getElementById('btn-generate');
+  toast(`✏️ 修改任务已提交: ${feedback}`);
+  await api('/api/modify', { method: 'POST', body: JSON.stringify({ country, chapter: chapter || null, feedback }) });
+  // The actual re-generation is triggered via the task queue
+  // For now, prompt the user to re-run the skill in Claude Code
+  const msg = chapter ? `${country}${chapter}需要修改: ${feedback}` : `${country}全部章节需要修改: ${feedback}`;
+  document.getElementById('log-panel').classList.remove('hidden');
+  document.getElementById('log-content').textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n请在Claude Code中执行修改。`;
+  document.getElementById('feedback-' + country).value = '';
+}
+
+async function downloadCountry(country) {
+  window.open('/api/download/' + encodeURIComponent(country), '_blank');
+  toast('📥 开始下载: ' + country);
+}
+
+async function batchDownload() {
+  const completed = await api('/api/completed');
+  const countries = [...new Set(completed.filter(c => c.type === 'PPT课件').map(c => c.name.replace('出国培训课件','')))];
+  if (!countries.length) return toast('没有可下载的文件');
+  const res = await fetch('/api/download-batch', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({countries}) });
+  if (!res.ok) return toast('下载失败');
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = '批量课件下载.zip'; a.click();
+  toast('📥 批量下载 ' + countries.length + ' 个国家');
 }
 
 async function previewCountry(country) {
@@ -221,17 +286,22 @@ async function previewCountry(country) {
 async function loadCompleted() {
   const list = await api('/api/completed');
   const el = document.getElementById('completed-list');
-  if (!list.length) return el.innerHTML = '<div class="empty">暂无已完成的课件 📭</div>';
+  const pptItems = list.filter(l => l.type === 'PPT课件' && l.files.length > 0);
+  if (!pptItems.length) return el.innerHTML = '<div class="empty">暂无已完成的课件 📭</div>';
   el.innerHTML = `<table>
-    <tr><th>国家/项目</th><th>类型</th><th>文件数</th><th>大小</th><th>修改时间</th><th>操作</th></tr>
-    ${list.map(l => `<tr>
-      <td><b>${l.name.replace('出国培训课件','').replace('出国培训课程文档','')}</b></td>
-      <td>${l.type}</td><td>${l.files.length}</td>
+    <tr><th>国家</th><th>文件数</th><th>大小</th><th>日期</th><th>操作</th></tr>
+    ${pptItems.map(l => { const c = l.name.replace('出国培训课件',''); return `<tr>
+      <td><b>${c}</b></td>
+      <td>${l.files.length}个PPT</td>
       <td>${(l.size/1024/1024).toFixed(1)} MB</td>
       <td>${new Date(l.mtime).toLocaleDateString()}</td>
-      <td><button class="btn btn-danger btn-sm" onclick="deleteCountry('${l.name.replace('出国培训课件','').replace('出国培训课程文档','')}')">🗑</button></td>
-    </tr>`).join('')}
+      <td style="display:flex;gap:6px">
+        <button class="btn btn-outline btn-sm" onclick="downloadCountry('${c}')">📥</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteCountry('${c}')">🗑</button>
+      </td>
+    </tr>`}).join('')}
   </table>`;
+  document.getElementById('btn-batch-dl').style.display = pptItems.length > 1 ? '' : 'none';
 }
 
 function toggleBatch() { document.getElementById('batch-area').classList.toggle('hidden'); }

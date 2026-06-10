@@ -199,6 +199,51 @@ app.post('/api/batch', async (req, res) => {
   res.json({ results: allResults });
 });
 
+// Download single country PPT as ZIP
+app.get('/api/download/:country', (req, res) => {
+  const { country } = req.params;
+  const pptDir = path.join(OUTPUT, 'PPT课件', `${country}出国培训课件`);
+  if (!fs.existsSync(pptDir)) return res.status(404).json({ error: 'PPT课件不存在' });
+  const AdmZip = require('adm-zip');
+  const zip = new AdmZip();
+  const files = fs.readdirSync(pptDir).filter(f => f.endsWith('.pptx'));
+  if (!files.length) return res.status(404).json({ error: '无PPT文件' });
+  files.forEach(f => zip.addLocalFile(path.join(pptDir, f)));
+  const zipName = `${country}出国培训课件.zip`;
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(zipName)}"`);
+  res.send(zip.toBuffer());
+});
+
+// Batch download multiple countries
+app.post('/api/download-batch', (req, res) => {
+  const { countries } = req.body;
+  if (!countries || !countries.length) return res.status(400).json({ error: 'Countries required' });
+  const AdmZip = require('adm-zip');
+  const zip = new AdmZip();
+  let hasFiles = false;
+  for (const country of countries) {
+    const pptDir = path.join(OUTPUT, 'PPT课件', `${country}出国培训课件`);
+    if (!fs.existsSync(pptDir)) continue;
+    const files = fs.readdirSync(pptDir).filter(f => f.endsWith('.pptx'));
+    files.forEach(f => zip.addLocalFile(path.join(pptDir, f), country + '/'));
+    if (files.length) hasFiles = true;
+  }
+  if (!hasFiles) return res.status(404).json({ error: '无PPT文件' });
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', 'attachment; filename="批量课件下载.zip"');
+  res.send(zip.toBuffer());
+});
+
+// Modify and regenerate (save version, trigger re-run via queue)
+app.post('/api/modify', (req, res) => {
+  const { country, chapter, feedback } = req.body;
+  const task = { country, chapter, feedback, created: new Date().toISOString(), status: 'pending' };
+  const taskFile = path.join(TASK_DIR, `modify_${country}_${chapter || 'all'}_${Date.now().toString(36)}.json`);
+  fs.writeFileSync(taskFile, JSON.stringify(task, null, 2));
+  res.json({ status: 'pending', message: `修改任务已提交: ${feedback}` });
+});
+
 // Serve thumbnails
 app.use('/thumbnails', express.static(THUMB_DIR));
 
