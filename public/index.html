@@ -190,143 +190,82 @@ async function startGenerate() {
 }
 
 async function loadReview() {
-  const [queue, completed] = await Promise.all([api('/api/queue'), api('/api/completed')]);
+  const [reviews, completed] = await Promise.all([api('/api/reviews'), api('/api/completed')]);
   const el = document.getElementById('review-list');
-  // Show countries that have files but aren't archived
-  const items = completed.filter(c => c.type === 'PPT课件' && c.files.length > 0);
-  if (!items.length) return el.innerHTML = '<div class="empty">暂无待审查的课件 ✨<br><small>先生成课件，完成后会出现在这里</small></div>';
+  const countries = new Set();
+  completed.forEach(c => {
+    if (c.type === 'PPT课件' && c.files.length > 0) countries.add(c.name.replace('出国培训课件',''));
+    if (c.type === 'PPT内容') countries.add(c.name.replace('出国培训课程文档',''));
+    if (c.type === '检索信息') countries.add(c.name.replace('检索信息结果.docx',''));
+  });
 
-  el.innerHTML = items.map(c => {
-    const country = c.name.replace('出国培训课件','');
-    return `
-    <div class="card" style="margin-bottom:16px">
+  if (!countries.size) return el.innerHTML = '<div class="empty">暂无待审查的课件 ✨<br><small>生成PPT内容后会自动出现在这里</small></div>';
+
+  const html = [];
+  for (const country of countries) {
+    const r = reviews[country] || {};
+    const step = r.step || '';
+    const isContent = step === 'content_done' || step === 'ppt_done';
+    const isPPT = step === 'ppt_done';
+    const badge = r.status === 'approved' ? '<span class="badge badge-ok">已通过</span>' : (isPPT ? '<span class="badge badge-warn">PPT完成·待审查</span>' : '<span class="badge badge-warn">PPT内容完成·待审查</span>');
+    const verInfo = r.version > 0 ? ` · 修改${r.version}次` : '';
+
+    html.push(`<div class="card" style="margin-bottom:16px">
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <div><b style="font-size:16px">${country}</b>
-          <span class="badge badge-ok">待审查</span>
-          <span style="font-size:11px;color:var(--sub);margin-left:8px">${c.files.length}个文件 · ${(c.size/1024/1024).toFixed(1)}MB · ${new Date(c.mtime).toLocaleDateString()}</span>
+        <div><b style="font-size:16px">${country}</b> ${badge}
+          <span style="font-size:11px;color:var(--sub);margin-left:8px">步骤: ${step||'未知'}${verInfo}</span>
         </div>
         <div style="display:flex;gap:6px">
-          <button class="btn btn-outline btn-sm" onclick="downloadCountry('${country}')">📥 下载</button>
+          ${isPPT ? `<button class="btn btn-primary btn-sm" onclick="downloadCountry('${country}')">📥 下载PPT</button>` : ''}
+          <button class="btn btn-outline btn-sm" onclick="approveCountry('${country}')">✅ 审查通过</button>
+          <button class="btn btn-outline btn-sm" onclick="previewCountry('${country}')">👁 预览</button>
           <button class="btn btn-danger btn-sm" onclick="deleteCountry('${country}')">🗑</button>
         </div>
       </div>
-      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap" id="files-${country}">
-        ${c.files.map(f => `<span style="font-size:11px;background:var(--gray);padding:2px 8px;border-radius:3px">${f}</span>`).join('')}
-      </div>
-      <!-- Modify section -->
-      <div style="margin-top:12px;padding:10px;background:var(--gray);border-radius:6px">
+      ${r.versions && r.versions.length > 0 ? `
+      <div style="margin-top:8px;font-size:11px;color:var(--sub)">修改记录: ${r.versions.map(v=>v.version+': '+v.feedback).join(' | ')}</div>` : ''}
+      <div style="margin-top:10px;padding:10px;background:var(--gray);border-radius:6px">
         <div style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:6px">✏️ 修改意见（可选章节）</div>
         <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
-          <select id="chapter-${country}" style="padding:6px 10px;border:1px solid #d0d0d0;border-radius:4px;font-size:12px">
+          <select id="ch-${country}" style="padding:6px 10px;border:1px solid #d0d0d0;border-radius:4px;font-size:12px">
             <option value="">全部章节</option>
-            <option value="第一章">第一章</option><option value="第二章">第二章</option><option value="第三章">第三章</option>
-            <option value="第四章">第四章</option><option value="第五章">第五章</option><option value="第六章">第六章</option>
-            <option value="附录">附录</option>
-          </select>
-          <input id="feedback-${country}" placeholder="描述修改内容，如：第一章国旗页精简..." style="flex:1;min-width:200px;padding:6px 10px;border:1px solid #d0d0d0;border-radius:4px;font-size:12px">          <button class="btn btn-outline btn-sm" onclick="submitModify('${country}')">🔄 重新生成</button>
+            ${['第一章','第二章','第三章','第四章','第五章','第六章','附录'].map(c=>`<option value="${c}">${c}</option>`).join('')}</select>
+          <input id="fb-${country}" placeholder="描述修改内容..." style="flex:1;min-width:150px;padding:6px 10px;border:1px solid #d0d0d0;border-radius:4px;font-size:12px">
+          <button class="btn btn-outline btn-sm" onclick="submitModify('${country}')">🔄 提交修改</button>
+          ${r.version > 0 ? `<button class="btn btn-outline btn-sm" onclick="finalizeCountry('${country}')">🧹 整理旧版本</button>` : ''}
         </div>
       </div>
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button class="btn btn-outline btn-sm" onclick="loadThumbnails('${country}')">🖼 文件列表</button>
-        <button class="btn btn-outline btn-sm" onclick="previewCountry('${country}')">👁 预览文档</button>
-      </div>
       <div id="preview-${country}" class="preview-box hidden" style="margin-top:12px;max-height:300px"></div>
-      <div id="thumbs-${country}" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"></div>
-    </div>
-  `}).join('');
+    </div>`);
+  }
+  el.innerHTML = html.join('');
+}
+
+async function approveCountry(country) {
+  if (!confirm(`确认「${country}」审查通过，继续下一步？`)) return;
+  const res = await api('/api/approve', { method: 'POST', body: JSON.stringify({ country }) });
+  toast('✅ ' + res.message);
+  loadReview();
+}
+
+async function finalizeCountry(country) {
+  if (!confirm(`确认删除「${country}」的所有旧版本文件，仅保留最新版？`)) return;
+  const res = await api('/api/finalize', { method: 'POST', body: JSON.stringify({ country }) });
+  toast('🧹 ' + res.message);
+  loadReview();
 }
 
 async function submitModify(country) {
-  const chapter = document.getElementById('chapter-' + country).value;
-  const feedback = document.getElementById('feedback-' + country).value.trim();
+  const chapter = document.getElementById('ch-' + country)?.value || '';
+  const feedback = document.getElementById('fb-' + country)?.value?.trim();
   if (!feedback) return toast('请输入修改意见');
-  const btn = document.getElementById('btn-generate');
-  toast(`✏️ 修改任务已提交: ${feedback}`);
-  await api('/api/modify', { method: 'POST', body: JSON.stringify({ country, chapter: chapter || null, feedback }) });
-  // The actual re-generation is triggered via the task queue
-  // For now, prompt the user to re-run the skill in Claude Code
-  const msg = chapter ? `${country}${chapter}需要修改: ${feedback}` : `${country}全部章节需要修改: ${feedback}`;
+  const res = await api('/api/modify', { method: 'POST', body: JSON.stringify({ country, chapter: chapter || null, feedback }) });
+  toast('✏️ ' + res.message);
+  document.getElementById('fb-' + country).value = '';
   document.getElementById('log-panel').classList.remove('hidden');
-  document.getElementById('log-content').textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n请在Claude Code中执行修改。`;
-  document.getElementById('feedback-' + country).value = '';
+  document.getElementById('log-content').textContent = `[${new Date().toLocaleTimeString()}] ${country} ${res.version}: ${feedback}`;
+  loadReview();
 }
-
-async function downloadCountry(country) {
-  window.open('/api/download/' + encodeURIComponent(country), '_blank');
-  toast('📥 开始下载: ' + country);
-}
-
-async function batchDownload() {
-  const completed = await api('/api/completed');
-  const countries = [...new Set(completed.filter(c => c.type === 'PPT课件').map(c => c.name.replace('出国培训课件','')))];
-  if (!countries.length) return toast('没有可下载的文件');
-  const res = await fetch('/api/download-batch', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({countries}) });
-  if (!res.ok) return toast('下载失败');
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = '批量课件下载.zip'; a.click();
-  toast('📥 批量下载 ' + countries.length + ' 个国家');
-}
-
-async function previewCountry(country) {
-  const box = document.getElementById('preview-' + country);
-  box.classList.toggle('hidden');
-  if (!box.classList.contains('hidden') && !box.textContent) {
-    box.textContent = '加载中...';
-    const data = await api('/api/preview/' + country);
-    box.textContent = data.preview || '（无预览内容）';
-  }
-}
-
-async function loadCompleted() {
-  const list = await api('/api/completed');
-  const el = document.getElementById('completed-list');
-  const pptItems = list.filter(l => l.type === 'PPT课件' && l.files.length > 0);
-  if (!pptItems.length) return el.innerHTML = '<div class="empty">暂无已完成的课件 📭</div>';
-  el.innerHTML = `<table>
-    <tr><th>国家</th><th>文件数</th><th>大小</th><th>日期</th><th>操作</th></tr>
-    ${pptItems.map(l => { const c = l.name.replace('出国培训课件',''); return `<tr>
-      <td><b>${c}</b></td>
-      <td>${l.files.length}个PPT</td>
-      <td>${(l.size/1024/1024).toFixed(1)} MB</td>
-      <td>${new Date(l.mtime).toLocaleDateString()}</td>
-      <td style="display:flex;gap:6px">
-        <button class="btn btn-outline btn-sm" onclick="downloadCountry('${c}')">📥</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteCountry('${c}')">🗑</button>
-      </td>
-    </tr>`}).join('')}
-  </table>`;
-  document.getElementById('btn-batch-dl').style.display = pptItems.length > 1 ? '' : 'none';
-}
-
-function toggleBatch() { document.getElementById('batch-area').classList.toggle('hidden'); }
-
-async function startBatch() {
-  const raw = document.getElementById('batch-input').value.trim();
-  if (!raw) return toast('请输入国家名称');
-  const countries = raw.split('\n').map(s => s.trim()).filter(Boolean);
-  const steps = [document.getElementById('step1').checked, document.getElementById('step2').checked, document.getElementById('step3').checked];
-  document.getElementById('progress-area').classList.remove('hidden');
-  document.getElementById('progress-fill').style.width = '5%';
-  document.getElementById('progress-msg').textContent = `批量生成 ${countries.length} 个国家: ${countries.join(', ')}`;
-  document.getElementById('log-content').textContent = `批量任务: ${countries.join(', ')}\n`;
-  document.getElementById('btn-generate').disabled = true;
-  for (let i = 0; i < countries.length; i++) {
-    document.getElementById('progress-fill').style.width = (5 + 90 * (i / countries.length)) + '%';
-    document.getElementById('progress-msg').textContent = `[${i+1}/${countries.length}] ${countries[i]}...`;
-    const res = await api('/api/generate', { method: 'POST', body: JSON.stringify({ country: countries[i], steps }) });
-    document.getElementById('log-content').textContent += `\n${countries[i]}: ${res.status} - ${res.message}`;
-  }
-  document.getElementById('progress-fill').style.width = '100%';
-  document.getElementById('progress-msg').textContent = `批量完成！${countries.length} 个国家处理完毕`;
-  document.getElementById('btn-generate').disabled = false;
-  loadStats(); loadReview();
-}
-
-async function loadReview() {
-  const queue = await api('/api/queue');
-  const el = document.getElementById('review-list');
-  const pending = queue.filter(q => q.status !== 'completed');
   if (!pending.length) return el.innerHTML = '<div class="empty">暂无待审查的课件 ✨</div>';
   el.innerHTML = pending.map(q => `
     <div class="card" style="margin-bottom:12px">
@@ -376,6 +315,43 @@ async function deleteCountry(country) {
   loadCompleted();
   loadStats();
 }
+
+async function downloadCountry(country) {
+  window.open('/api/download/' + encodeURIComponent(country), '_blank');
+  toast('📥 开始下载: ' + country);
+}
+async function batchDownload() {
+  const completed = await api('/api/completed');
+  const countries = [...new Set(completed.filter(c => c.type === 'PPT课件').map(c => c.name.replace('出国培训课件','')))];
+  if (!countries.length) return toast('没有可下载的文件');
+  const res = await fetch('/api/download-batch', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({countries}) });
+  if (!res.ok) return toast('下载失败');
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = '批量课件下载.zip'; a.click();
+  toast('📥 批量下载 ' + countries.length + ' 个国家');
+}
+async function loadCompleted() {
+  const list = await api('/api/completed');
+  const el = document.getElementById('completed-list');
+  const pptItems = list.filter(l => l.type === 'PPT课件' && l.files.length > 0);
+  if (!pptItems.length) return el.innerHTML = '<div class="empty">暂无已完成的课件</div>';
+  el.innerHTML = `<table><tr><th>国家</th><th>文件数</th><th>大小</th><th>日期</th><th>操作</th></tr>
+    ${pptItems.map(l => { const c = l.name.replace('出国培训课件',''); return `<tr><td><b>${c}</b></td><td>${l.files.length}</td>
+      <td>${(l.size/1024/1024).toFixed(1)} MB</td><td>${new Date(l.mtime).toLocaleDateString()}</td>
+      <td><button class="btn btn-outline btn-sm" onclick="downloadCountry('${c}')">📥</button> <button class="btn btn-danger btn-sm" onclick="deleteCountry('${c}')">🗑</button></td></tr>`}).join('')}</table>`;
+  document.getElementById('btn-batch-dl').style.display = pptItems.length > 1 ? '' : 'none';
+}
+function toggleBatch() { document.getElementById('batch-area').classList.toggle('hidden'); }
+async function startBatch() {
+  const raw = document.getElementById('batch-input').value.trim();
+  if (!raw) return toast('请输入国家名称');
+  const countries = raw.split('\n').map(s => s.trim()).filter(Boolean);
+  for (const c of countries) await api('/api/generate', { method: 'POST', body: JSON.stringify({ country: c, steps: [true,true,true] }) });
+  toast('批量提交完成: ' + countries.join(', '));
+  loadStats(); loadReview();
+}
+function fsExistsSync_check(c) { return c && c.files && c.files.length > 0; }
 
 // Init
 loadStats();

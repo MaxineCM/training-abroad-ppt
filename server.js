@@ -11,11 +11,13 @@ app.use(express.static('public'));
 
 const OUTPUT = path.join(__dirname, 'Output');
 const QUEUE_FILE = path.join(__dirname, 'workspace', 'queue.json');
+const REVIEW_FILE = path.join(__dirname, 'workspace', 'review_state.json');
 const LOG_DIR = path.join(__dirname, 'workspace', 'logs');
 
 // Ensure dirs
 [OUTPUT, path.join(__dirname, 'workspace'), LOG_DIR].forEach(d => { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); });
 if (!fs.existsSync(QUEUE_FILE)) fs.writeFileSync(QUEUE_FILE, '[]');
+if (!fs.existsSync(REVIEW_FILE)) fs.writeFileSync(REVIEW_FILE, '{}');
 
 // ========== Pipeline Executor (Task Queue Mode) ==========
 // Web submits tasks → writes to workspace/tasks/ → Claude session picks up and executes
@@ -245,13 +247,95 @@ app.post('/api/download-batch', (req, res) => {
   res.send(zip.toBuffer());
 });
 
-// Modify and regenerate (save version, trigger re-run via queue)
+// ========== Review State Management ==========
+function getReviewState(country) {
+  const states = JSON.parse(fs.readFileSync(REVIEW_FILE, 'utf-8'));
+  return states[country] || { step: 'research', status: 'pending', version: 0, versions: [] };
+}
+function setReviewState(country, state) {
+  const states = JSON.parse(fs.readFileSync(REVIEW_FILE, 'utf-8'));
+  states[country] = { ...getReviewState(country), ...state, updated: new Date().toISOString() };
+  fs.writeFileSync(REVIEW_FILE, JSON.stringify(states, null, 2));
+}
+
+// Get review state for a country
+app.get('/api/review/:country', (req, res) => {
+  res.json(getReviewState(req.params.country));
+});
+
+// Get all review states
+app.get('/api/reviews', (req, res) => {
+  const states = JSON.parse(fs.readFileSync(REVIEW_FILE, 'utf-8'));
+  // Auto-detect step from filesystem
+  for (const [c, s] of Object.entries(states)) {
+    const pptDir = path.join(OUTPUT, 'PPT课件', `${c}出国培训课件`);
+    const contentDir = path.join(OUTPUT, 'PPT内容文件', `${c}出国培训课程文档`);
+    const researchFile = path.join(OUTPUT, '检索信息结果', `${c}检索信息结果.docx`);
+    if (fs.existsSync(pptDir) && fs.readdirSync(pptDir).some(f=>f.endsWith('.pptx'))) s.step = 'ppt_done';
+    else if (fs.existsSync(contentDir)) s.step = 'content_done';
+    else if (fs.existsSync(researchFile)) s.step = 'research_done';
+  }
+  fs.writeFileSync(REVIEW_FILE, JSON.stringify(states, null, 2));
+  res.json(states);
+});
+
+// Submit modification feedback (version management)
 app.post('/api/modify', (req, res) => {
   const { country, chapter, feedback } = req.body;
-  const task = { country, chapter, feedback, created: new Date().toISOString(), status: 'pending' };
-  const taskFile = path.join(TASK_DIR, `modify_${country}_${chapter || 'all'}_${Date.now().toString(36)}.json`);
-  fs.writeFileSync(taskFile, JSON.stringify(task, null, 2));
-  res.json({ status: 'pending', message: `修改任务已提交: ${feedback}` });
+  const state = getReviewState(country);
+  const newVersion = state.version + 1;
+  const versionLabel = `V${newVersion}`;
+  state.versions.push({ version: versionLabel, chapter: chapter || '全部', feedback, time: new Date().toISOString() });
+  state.version = newVersion;
+  state.status = 'modifying';
+  setReviewState(country, state);
+
+  // Write task to trigger regeneration
+  const taskFile = path.join(TASK_DIR, `modify_${country}_V${newVersion}_${Date.now().toString(36)}.json`);
+  fs.writeFileSync(taskFile, JSON.stringify({ country, chapter, feedback, version: versionLabel, created: new Date().toISOString(), status: 'pending' }));
+
+  res.json({ status: 'pending', version: versionLabel, message: `修改任务V${newVersion}已提交: ${feedback}` });
+});
+
+// Approve current step → proceed to next step
+app.post('/api/approve', (req, res) => {
+  const { country } = req.body;
+  const state = getReviewState(country);
+  // Clean old versions
+  if (state.versions.length > 0) {
+    const contentDir = path.join(OUTPUT, 'PPT内容文件', `${country}出国培训课程文档`);
+    if (fs.existsSync(contentDir)) {
+      fs.readdirSync(contentDir).filter(f => f.includes('V')).forEach(f => {
+        try { fs.unlinkSync(path.join(contentDir, f)); } catch(e) {}
+      });
+    }
+  }
+  state.status = 'approved';
+  state.versions = [];
+  setReviewState(country, state);
+  res.json({ status: 'approved', message: `${country} 审查通过，继续下一步` });
+});
+
+// Final cleanup: consolidate files, remove old versions
+app.post('/api/finalize', (req, res) => {
+  const { country } = req.body;
+  const state = getReviewState(country);
+  const dirs = [
+    path.join(OUTPUT, 'PPT内容文件', `${country}出国培训课程文档`),
+    path.join(OUTPUT, 'PPT课件', `${country}出国培训课件`),
+  ];
+  let cleaned = 0;
+  for (const d of dirs) {
+    if (!fs.existsSync(d)) continue;
+    fs.readdirSync(d).filter(f => f.includes('V')).forEach(f => {
+      try { fs.unlinkSync(path.join(d, f)); cleaned++; } catch(e) {}
+    });
+  }
+  state.status = 'completed';
+  state.version = 0;
+  state.versions = [];
+  setReviewState(country, state);
+  res.json({ status: 'completed', cleaned, message: `${country} 已完成整理，删除${cleaned}个旧版本` });
 });
 
 // Serve thumbnails
