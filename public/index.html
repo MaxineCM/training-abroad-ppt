@@ -266,20 +266,6 @@ async function submitModify(country) {
   document.getElementById('log-content').textContent = `[${new Date().toLocaleTimeString()}] ${country} ${res.version}: ${feedback}`;
   loadReview();
 }
-  if (!pending.length) return el.innerHTML = '<div class="empty">暂无待审查的课件 ✨</div>';
-  el.innerHTML = pending.map(q => `
-    <div class="card" style="margin-bottom:12px">
-      <div><b style="font-size:15px">${q.country}</b> <span class="badge ${q.status==='completed'?'badge-ok':'badge-warn'}">${q.status}</span></div>
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button class="btn btn-outline btn-sm" onclick="previewCountry('${q.country}')">👁 预览文档</button>
-        <button class="btn btn-outline btn-sm" onclick="loadThumbnails('${q.country}')">🖼 PPT缩略图</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteCountry('${q.country}')">🗑</button>
-      </div>
-      <div id="preview-${q.country}" class="preview-box hidden" style="margin-top:12px;max-height:300px"></div>
-      <div id="thumbs-${q.country}" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"></div>
-    </div>
-  `).join('');
-}
 
 async function loadThumbnails(country) {
   const box = document.getElementById('thumbs-' + country);
